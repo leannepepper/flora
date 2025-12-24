@@ -1,16 +1,20 @@
 import { makeAutoObservable } from "mobx";
 
+// Conversion factor for camera distance to zoom
+// Camera sits at 45° angle, so distance = zoom * sqrt(2)
+export const DISTANCE_TO_ZOOM_FACTOR = Math.sqrt(2);
+
 class CameraStore {
-  // Shared target position (the point cameras look at)
+  // Shared target position for pan (X and Z only)
   targetX = 0;
   targetZ = 0;
 
-  // Shared zoom level
+  // Shared zoom level (world units visible)
   zoom = 10;
 
   // Zoom constraints
-  minZoom = 2;
-  maxZoom = 100;
+  readonly minZoom = 2;
+  readonly maxZoom = 100;
 
   constructor() {
     makeAutoObservable(this);

@@ -5,40 +5,32 @@ import { observer } from "mobx-react-lite";
 import * as THREE from "three/webgpu";
 import { useWebGPUCanvas } from "@/hooks/useWebGPUCanvas";
 import { cameraStore } from "@/stores/cameraStore";
+import { addStandardLighting, createTestCube } from "@/utils/sceneHelpers";
 
+const BACKGROUND_COLOR = 0xf5f5f5;
+const GRID_COLOR = 0xcccccc;
+const GRID_CENTER_COLOR = 0x888888;
 const ZOOM_SPEED = 0.1;
 
 const PlanCanvas = observer(function PlanCanvas() {
-  const cubeRef = useRef<THREE.Mesh | null>(null);
   const isDraggingRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
 
   const setupScene = useCallback((scene: THREE.Scene) => {
-    // Add infinite grid
-    const gridSize = 1000;
-    const gridDivisions = 1000;
+    // Infinite grid
     const gridHelper = new THREE.GridHelper(
-      gridSize,
-      gridDivisions,
-      0x888888, // center line color
-      0xcccccc // grid color
+      1000,
+      1000,
+      GRID_CENTER_COLOR,
+      GRID_COLOR
     );
-    gridHelper.rotation.x = 0;
     scene.add(gridHelper);
 
-    // Add a test cube
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0xe67e22 });
-    const cube = new THREE.Mesh(geometry, material);
-    cube.position.y = 0.5;
-    scene.add(cube);
-    cubeRef.current = cube;
+    // Test cube
+    scene.add(createTestCube(0xe67e22));
 
-    // Add lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 10, 5);
-    scene.add(directionalLight);
+    // Lighting
+    addStandardLighting(scene);
   }, []);
 
   const setupCamera = useCallback((aspect: number) => {
@@ -68,21 +60,14 @@ const PlanCanvas = observer(function PlanCanvas() {
     orthoCamera.updateProjectionMatrix();
   }, []);
 
-  const onAnimate = useCallback(() => {
-    if (cubeRef.current) {
-      cubeRef.current.rotation.y += 0.01;
-    }
-  }, []);
-
   const { containerRef, cameraRef } = useWebGPUCanvas({
-    backgroundColor: 0xf5f5f5,
+    backgroundColor: BACKGROUND_COLOR,
     setupScene,
     setupCamera,
     updateCamera,
-    onAnimate,
   });
 
-  // Sync camera with store changes
+  // Sync camera with store
   useEffect(() => {
     if (cameraRef.current && containerRef.current) {
       const aspect =
@@ -91,7 +76,7 @@ const PlanCanvas = observer(function PlanCanvas() {
     }
   }, [cameraStore.targetX, cameraStore.targetZ, cameraStore.zoom, cameraRef, containerRef, updateCamera]);
 
-  // Handle zoom and pan
+  // Pan and zoom handlers
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -103,7 +88,7 @@ const PlanCanvas = observer(function PlanCanvas() {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      if (e.button === 1 || e.button === 0) {
+      if (e.button === 0 || e.button === 1) {
         isDraggingRef.current = true;
         lastMouseRef.current = { x: e.clientX, y: e.clientY };
         container.style.cursor = "grabbing";
@@ -117,17 +102,11 @@ const PlanCanvas = observer(function PlanCanvas() {
       const deltaY = e.clientY - lastMouseRef.current.y;
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
 
-      // Convert screen pixels to world units
       const pixelsPerUnit = container.clientHeight / cameraStore.zoom;
       cameraStore.pan(-deltaX / pixelsPerUnit, -deltaY / pixelsPerUnit);
     };
 
     const handleMouseUp = () => {
-      isDraggingRef.current = false;
-      container.style.cursor = "grab";
-    };
-
-    const handleMouseLeave = () => {
       isDraggingRef.current = false;
       container.style.cursor = "grab";
     };
@@ -138,14 +117,14 @@ const PlanCanvas = observer(function PlanCanvas() {
     container.addEventListener("mousedown", handleMouseDown);
     container.addEventListener("mousemove", handleMouseMove);
     container.addEventListener("mouseup", handleMouseUp);
-    container.addEventListener("mouseleave", handleMouseLeave);
+    container.addEventListener("mouseleave", handleMouseUp);
 
     return () => {
       container.removeEventListener("wheel", handleWheel);
       container.removeEventListener("mousedown", handleMouseDown);
       container.removeEventListener("mousemove", handleMouseMove);
       container.removeEventListener("mouseup", handleMouseUp);
-      container.removeEventListener("mouseleave", handleMouseLeave);
+      container.removeEventListener("mouseleave", handleMouseUp);
     };
   }, [containerRef]);
 
@@ -158,7 +137,7 @@ const PlanCanvas = observer(function PlanCanvas() {
         position: "absolute",
         top: 0,
         left: 0,
-        backgroundColor: "#f5f5f5",
+        backgroundColor: `#${BACKGROUND_COLOR.toString(16).padStart(6, "0")}`,
         overflow: "hidden",
       }}
     />
