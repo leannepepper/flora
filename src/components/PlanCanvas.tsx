@@ -1,18 +1,15 @@
 "use client";
 
 import { useCallback, useRef, useEffect } from "react";
+import { observer } from "mobx-react-lite";
 import * as THREE from "three/webgpu";
 import { useWebGPUCanvas } from "@/hooks/useWebGPUCanvas";
+import { cameraStore } from "@/stores/cameraStore";
 
-const DEFAULT_ZOOM = 10;
-const MIN_ZOOM = 2;
-const MAX_ZOOM = 100;
 const ZOOM_SPEED = 0.1;
 
-export default function PlanCanvas() {
+const PlanCanvas = observer(function PlanCanvas() {
   const cubeRef = useRef<THREE.Mesh | null>(null);
-  const zoomRef = useRef(DEFAULT_ZOOM);
-  const panRef = useRef({ x: 0, z: 0 });
   const isDraggingRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
 
@@ -26,14 +23,14 @@ export default function PlanCanvas() {
       0x888888, // center line color
       0xcccccc // grid color
     );
-    gridHelper.rotation.x = 0; // Grid is already in XZ plane, viewed from above
+    gridHelper.rotation.x = 0;
     scene.add(gridHelper);
 
     // Add a test cube
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const material = new THREE.MeshStandardMaterial({ color: 0xe67e22 });
     const cube = new THREE.Mesh(geometry, material);
-    cube.position.y = 0.5; // Lift it so it sits on the grid
+    cube.position.y = 0.5;
     scene.add(cube);
     cubeRef.current = cube;
 
@@ -45,7 +42,7 @@ export default function PlanCanvas() {
   }, []);
 
   const setupCamera = useCallback((aspect: number) => {
-    const zoom = zoomRef.current;
+    const { zoom, targetX, targetZ } = cameraStore;
     const camera = new THREE.OrthographicCamera(
       (zoom * aspect) / -2,
       (zoom * aspect) / 2,
@@ -54,20 +51,20 @@ export default function PlanCanvas() {
       0.1,
       1000
     );
-    camera.position.set(panRef.current.x, 100, panRef.current.z);
-    camera.lookAt(panRef.current.x, 0, panRef.current.z);
+    camera.position.set(targetX, 100, targetZ);
+    camera.lookAt(targetX, 0, targetZ);
     return camera;
   }, []);
 
   const updateCamera = useCallback((camera: THREE.Camera, aspect: number) => {
     const orthoCamera = camera as THREE.OrthographicCamera;
-    const zoom = zoomRef.current;
+    const { zoom, targetX, targetZ } = cameraStore;
     orthoCamera.left = (zoom * aspect) / -2;
     orthoCamera.right = (zoom * aspect) / 2;
     orthoCamera.top = zoom / 2;
     orthoCamera.bottom = zoom / -2;
-    orthoCamera.position.set(panRef.current.x, 100, panRef.current.z);
-    orthoCamera.lookAt(panRef.current.x, 0, panRef.current.z);
+    orthoCamera.position.set(targetX, 100, targetZ);
+    orthoCamera.lookAt(targetX, 0, targetZ);
     orthoCamera.updateProjectionMatrix();
   }, []);
 
@@ -85,6 +82,15 @@ export default function PlanCanvas() {
     onAnimate,
   });
 
+  // Sync camera with store changes
+  useEffect(() => {
+    if (cameraRef.current && containerRef.current) {
+      const aspect =
+        containerRef.current.clientWidth / containerRef.current.clientHeight;
+      updateCamera(cameraRef.current, aspect);
+    }
+  }, [cameraStore.targetX, cameraStore.targetZ, cameraStore.zoom, cameraRef, containerRef, updateCamera]);
+
   // Handle zoom and pan
   useEffect(() => {
     const container = containerRef.current;
@@ -92,23 +98,11 @@ export default function PlanCanvas() {
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-
-      // Adjust zoom based on scroll direction
-      const delta = e.deltaY > 0 ? 1 + ZOOM_SPEED : 1 - ZOOM_SPEED;
-      zoomRef.current = Math.max(
-        MIN_ZOOM,
-        Math.min(MAX_ZOOM, zoomRef.current * delta)
-      );
-
-      // Update camera
-      if (cameraRef.current) {
-        const aspect = container.clientWidth / container.clientHeight;
-        updateCamera(cameraRef.current, aspect);
-      }
+      const factor = e.deltaY > 0 ? 1 + ZOOM_SPEED : 1 - ZOOM_SPEED;
+      cameraStore.zoomBy(factor);
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      // Middle mouse button or left mouse button
       if (e.button === 1 || e.button === 0) {
         isDraggingRef.current = true;
         lastMouseRef.current = { x: e.clientX, y: e.clientY };
@@ -123,16 +117,9 @@ export default function PlanCanvas() {
       const deltaY = e.clientY - lastMouseRef.current.y;
       lastMouseRef.current = { x: e.clientX, y: e.clientY };
 
-      // Convert screen pixels to world units based on zoom level
-      const pixelsPerUnit = container.clientHeight / zoomRef.current;
-      panRef.current.x -= deltaX / pixelsPerUnit;
-      panRef.current.z -= deltaY / pixelsPerUnit;
-
-      // Update camera position
-      if (cameraRef.current) {
-        const aspect = container.clientWidth / container.clientHeight;
-        updateCamera(cameraRef.current, aspect);
-      }
+      // Convert screen pixels to world units
+      const pixelsPerUnit = container.clientHeight / cameraStore.zoom;
+      cameraStore.pan(-deltaX / pixelsPerUnit, -deltaY / pixelsPerUnit);
     };
 
     const handleMouseUp = () => {
@@ -145,7 +132,6 @@ export default function PlanCanvas() {
       container.style.cursor = "grab";
     };
 
-    // Set initial cursor
     container.style.cursor = "grab";
 
     container.addEventListener("wheel", handleWheel, { passive: false });
@@ -161,7 +147,7 @@ export default function PlanCanvas() {
       container.removeEventListener("mouseup", handleMouseUp);
       container.removeEventListener("mouseleave", handleMouseLeave);
     };
-  }, [containerRef, cameraRef, updateCamera]);
+  }, [containerRef]);
 
   return (
     <div
@@ -177,4 +163,6 @@ export default function PlanCanvas() {
       }}
     />
   );
-}
+});
+
+export default PlanCanvas;

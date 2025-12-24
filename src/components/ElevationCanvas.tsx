@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useEffect } from "react";
+import { observer } from "mobx-react-lite";
 import * as THREE from "three/webgpu";
 import { useWebGPUCanvas } from "@/hooks/useWebGPUCanvas";
+import { cameraStore } from "@/stores/cameraStore";
 
-export default function ElevationCanvas() {
+const ElevationCanvas = observer(function ElevationCanvas() {
   const cubeRef = useRef<THREE.Mesh | null>(null);
 
   const setupScene = useCallback((scene: THREE.Scene) => {
@@ -23,14 +25,21 @@ export default function ElevationCanvas() {
   }, []);
 
   const setupCamera = useCallback((aspect: number) => {
+    const { zoom, targetX, targetZ } = cameraStore;
     const camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
-    camera.position.z = 5;
+    // Position camera to look at target from the side (along Z axis)
+    camera.position.set(targetX, zoom / 2, targetZ + zoom);
+    camera.lookAt(targetX, 0, targetZ);
     return camera;
   }, []);
 
   const updateCamera = useCallback((camera: THREE.Camera, aspect: number) => {
     const perspCamera = camera as THREE.PerspectiveCamera;
+    const { zoom, targetX, targetZ } = cameraStore;
     perspCamera.aspect = aspect;
+    // Position camera to look at target from the side
+    perspCamera.position.set(targetX, zoom / 2, targetZ + zoom);
+    perspCamera.lookAt(targetX, 0, targetZ);
     perspCamera.updateProjectionMatrix();
   }, []);
 
@@ -41,13 +50,22 @@ export default function ElevationCanvas() {
     }
   }, []);
 
-  const { containerRef } = useWebGPUCanvas({
+  const { containerRef, cameraRef } = useWebGPUCanvas({
     backgroundColor: 0xffc0cb,
     setupScene,
     setupCamera,
     updateCamera,
     onAnimate,
   });
+
+  // Sync camera with store changes
+  useEffect(() => {
+    if (cameraRef.current && containerRef.current) {
+      const aspect =
+        containerRef.current.clientWidth / containerRef.current.clientHeight;
+      updateCamera(cameraRef.current, aspect);
+    }
+  }, [cameraStore.targetX, cameraStore.targetZ, cameraStore.zoom, cameraRef, containerRef, updateCamera]);
 
   return (
     <div
@@ -63,4 +81,6 @@ export default function ElevationCanvas() {
       }}
     />
   );
-}
+});
+
+export default ElevationCanvas;
