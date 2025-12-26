@@ -1,19 +1,22 @@
 "use client";
 
 import { useCallback, useRef, useEffect } from "react";
+import { reaction } from "mobx";
 import { observer } from "mobx-react-lite";
 import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useWebGPUCanvas } from "@/hooks/useWebGPUCanvas";
 import { cameraStore, DISTANCE_TO_ZOOM_FACTOR } from "@/stores/cameraStore";
-import { addStandardLighting, createTestCube } from "@/utils/sceneHelpers";
+import { plantStore } from "@/stores/plantStore";
+import { addStandardLighting } from "@/utils/sceneHelpers";
 
-const BACKGROUND_COLOR = 0x87ceeb; // Sky blue
+const BACKGROUND_COLOR = 0x87ceeb;
 const GROUND_COLOR = 0x90a955;
 
 const ElevationCanvas = observer(function ElevationCanvas() {
   const controlsRef = useRef<OrbitControls | null>(null);
   const lastDistanceRef = useRef<number>(0);
+  const plantMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
 
   const setupScene = useCallback((scene: THREE.Scene) => {
     // Ground plane
@@ -25,9 +28,6 @@ const ElevationCanvas = observer(function ElevationCanvas() {
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
-
-    // Test cube
-    scene.add(createTestCube(0x4a90d9));
 
     // Lighting
     addStandardLighting(scene);
@@ -74,13 +74,69 @@ const ElevationCanvas = observer(function ElevationCanvas() {
     }
   }, []);
 
-  const { containerRef, cameraRef } = useWebGPUCanvas({
+  const { containerRef, cameraRef, sceneRef } = useWebGPUCanvas({
     backgroundColor: BACKGROUND_COLOR,
     setupScene,
     setupCamera,
     updateCamera,
     onAnimate,
   });
+
+  // Sync plants with scene
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const dispose = reaction(
+      () =>
+        plantStore.plantList.map((plant) => ({
+          id: plant.id,
+          x: plant.position.x,
+          y: plant.position.y,
+          z: plant.position.z,
+          color: plant.color,
+        })),
+      () => {
+        const currentPlantIds = new Set(plantStore.plantList.map((p) => p.id));
+        const existingIds = new Set(plantMeshesRef.current.keys());
+
+        // Remove meshes for plants that no longer exist
+        for (const id of existingIds) {
+          if (!currentPlantIds.has(id)) {
+            const mesh = plantMeshesRef.current.get(id);
+            if (mesh) {
+              scene.remove(mesh);
+              mesh.geometry.dispose();
+              (mesh.material as THREE.Material).dispose();
+              plantMeshesRef.current.delete(id);
+            }
+          }
+        }
+
+        // Add meshes for new plants and update existing ones
+        for (const plant of plantStore.plantList) {
+          if (!plantMeshesRef.current.has(plant.id)) {
+            const mesh = plant.createElevationMesh();
+            scene.add(mesh);
+            plantMeshesRef.current.set(plant.id, mesh);
+          } else {
+            // Update position of existing mesh
+            const mesh = plantMeshesRef.current.get(plant.id)!;
+            mesh.position.set(
+              plant.position.x,
+              plant.position.y + 0.5,
+              plant.position.z
+            );
+          }
+        }
+      },
+      { fireImmediately: true }
+    );
+
+    return () => {
+      dispose();
+    };
+  }, [sceneRef]);
 
   // Setup OrbitControls
   useEffect(() => {

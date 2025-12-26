@@ -10,11 +10,3 @@ export function addStandardLighting(scene: THREE.Scene) {
 
   return { ambientLight, directionalLight };
 }
-
-export function createTestCube(color: number = 0x4a90d9) {
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshStandardMaterial({ color });
-  const cube = new THREE.Mesh(geometry, material);
-  cube.position.y = 0.5;
-  return cube;
-}
